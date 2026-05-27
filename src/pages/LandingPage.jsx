@@ -1,18 +1,17 @@
 import { useRef, useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import RetroTunnel        from '../components/landing/RetroTunnel'
 import DashboardMockup    from '../components/landing/DashboardMockup'
 import PhoneMockup        from '../components/landing/PhoneMockup'
 import CairnIcon          from '../components/shared/CairnIcon'
+import VantageFieldLogo   from '../components/shared/VantageFieldLogo'
 import SnowParticles      from '../components/shared/SnowParticles'
 import Aurora             from '../components/shared/Aurora'
 import MountainLayers     from '../components/shared/MountainLayers'
 
-/* ── Destination ─────────────────────────────────────────────────── */
-const APP   = 'https://app.vantagefield.app'
+/* ── Destinations ─────────────────────────────────────────────────── */
 const LOGIN = 'https://app.vantagefield.app/login'
-
-function goApp()   { window.location.href = APP }
 function goLogin() { window.location.href = LOGIN }
 
 /* ── Scroll-reveal wrapper ───────────────────────────────────────── */
@@ -80,25 +79,8 @@ function AutoCard({ icon, title, desc, delay }) {
   )
 }
 
-/* ── Industry card ───────────────────────────────────────────────── */
-function IndustryCard({ icon, name, delay }) {
-  return (
-    <Reveal delay={delay}>
-      <motion.div
-        className="glass rounded-2xl p-6 text-center"
-        whileHover={{ scale: 1.05, borderColor: 'rgba(201,168,76,0.35)' }}
-        transition={{ duration: 0.2 }}
-        style={{ border: '1px solid rgba(30,58,95,0.4)', cursor: 'default' }}
-      >
-        <div className="text-3xl mb-3">{icon}</div>
-        <div className="text-sm font-medium text-slate-300">{name}</div>
-      </motion.div>
-    </Reveal>
-  )
-}
-
 /* ── Pricing card ────────────────────────────────────────────────── */
-function PricingCard({ tier, price, features, highlight = false, delay = 0 }) {
+function PricingCard({ tier, price, features, highlight = false, delay = 0, onGetStarted }) {
   return (
     <Reveal delay={delay}>
       <motion.div
@@ -106,14 +88,10 @@ function PricingCard({ tier, price, features, highlight = false, delay = 0 }) {
         whileHover={{ scale: 1.02 }}
         transition={{ duration: 0.2 }}
         style={{
-          background: highlight
-            ? 'rgba(201,168,76,0.07)'
-            : 'rgba(10,20,38,0.55)',
+          background: highlight ? 'rgba(201,168,76,0.07)' : 'rgba(10,20,38,0.55)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          border: highlight
-            ? '1px solid rgba(201,168,76,0.4)'
-            : '1px solid rgba(30,58,95,0.4)',
+          border: highlight ? '1px solid rgba(201,168,76,0.4)' : '1px solid rgba(30,58,95,0.4)',
           boxShadow: highlight ? '0 0 40px rgba(201,168,76,0.12)' : undefined,
         }}
       >
@@ -127,8 +105,9 @@ function PricingCard({ tier, price, features, highlight = false, delay = 0 }) {
         )}
 
         <div className="mb-6">
-          <div className="text-xs font-semibold tracking-widest uppercase mb-2"
-            style={{ color: '#c9a84c' }}>{tier}</div>
+          <div className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ color: '#c9a84c' }}>
+            {tier}
+          </div>
           <div className="flex items-baseline gap-1">
             <span className="text-4xl font-bold text-white">${price}</span>
             <span className="text-slate-400 text-sm">/month</span>
@@ -145,7 +124,7 @@ function PricingCard({ tier, price, features, highlight = false, delay = 0 }) {
         </ul>
 
         <button
-          onClick={goApp}
+          onClick={onGetStarted}
           className={highlight ? 'btn-gold w-full text-sm py-3' : 'btn-ghost w-full text-sm py-3'}
         >
           Get Started
@@ -156,8 +135,8 @@ function PricingCard({ tier, price, features, highlight = false, delay = 0 }) {
 }
 
 /* ── Navbar ──────────────────────────────────────────────────────── */
-function Navbar() {
-  const [hidden, setHidden] = useState(false)
+function Navbar({ goDemo }) {
+  const [hidden, setHidden]   = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const lastY = useRef(0)
 
@@ -186,10 +165,7 @@ function Navbar() {
       }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3">
-        <CairnIcon size={32} state="resting" />
-        <span className="font-display font-bold text-white text-base tracking-tight">Vantage Field</span>
-      </div>
+      <VantageFieldLogo size={28} />
 
       {/* Nav actions */}
       <div className="flex items-center gap-3">
@@ -201,7 +177,7 @@ function Navbar() {
           Login
         </button>
         <button
-          onClick={goApp}
+          onClick={goDemo}
           className="btn-gold text-sm px-5 py-2.5"
           style={{ borderRadius: 12 }}
         >
@@ -214,6 +190,9 @@ function Navbar() {
 
 /* ── Main ────────────────────────────────────────────────────────── */
 export default function LandingPage() {
+  const navigate = useNavigate()
+  const goDemo   = () => navigate('/demo')
+
   const heroRef  = useRef(null)
   const shiftRef = useRef(null)
   const gpsRef   = useRef(null)
@@ -239,7 +218,7 @@ export default function LandingPage() {
       <Aurora />
       <SnowParticles />
 
-      <Navbar />
+      <Navbar goDemo={goDemo} />
 
       {/* ════════════════════════════════════════════════════════
           HERO
@@ -285,7 +264,7 @@ export default function LandingPage() {
             Field Operations Platform
           </motion.div>
 
-          {/* Headline — serif per spec */}
+          {/* Headline */}
           <motion.h1
             className="text-white leading-none mb-6"
             style={{
@@ -331,7 +310,7 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8 }}
           >
-            <button onClick={goApp} className="btn-gold text-base px-11 py-4 font-display">
+            <button onClick={goDemo} className="btn-gold text-base px-11 py-4 font-display">
               Try Free Demo
             </button>
             <button onClick={goLogin} className="btn-ghost text-base px-10 py-4">
@@ -347,7 +326,13 @@ export default function LandingPage() {
         >
           <span className="text-xs text-slate-600 tracking-widest uppercase">Scroll</span>
           <svg width="16" height="24" viewBox="0 0 16 24" fill="none" aria-hidden="true">
-            <path d="M8 4 L8 20 M3 15 L8 20 L13 15" stroke="rgba(201,168,76,0.6)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path
+              d="M8 4 L8 20 M3 15 L8 20 L13 15"
+              stroke="rgba(201,168,76,0.6)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </div>
       </section>
@@ -378,10 +363,7 @@ export default function LandingPage() {
                   '"How many hours did the team work this week?"',
                   '"Warn me if anyone approaches overtime."',
                 ].map((q) => (
-                  <div
-                    key={q}
-                    className="flex items-start gap-3 glass rounded-xl px-4 py-3"
-                  >
+                  <div key={q} className="flex items-start gap-3 glass rounded-xl px-4 py-3">
                     <span style={{ color: '#c9a84c' }} className="text-sm mt-0.5">→</span>
                     <span className="text-sm text-slate-300 italic">{q}</span>
                   </div>
@@ -410,9 +392,9 @@ export default function LandingPage() {
                 </div>
                 <p className="text-sm text-slate-300 leading-relaxed">
                   Good morning. You have{' '}
-                  <span className="text-white font-semibold">5 shifts</span> scheduled today,{' '}
-                  <span style={{ color: '#22c55e' }} className="font-medium">2 active</span> right
-                  now. Sarah Chen completed her shift at Westgate Mall on time. No alerts.
+                  <span className="text-white font-semibold">3 shifts</span> scheduled today,{' '}
+                  <span style={{ color: '#22c55e' }} className="font-medium">1 active</span> right
+                  now. Jane Doe clocked in at Riverside Tower on time. No alerts.
                 </p>
               </div>
             </div>
@@ -426,7 +408,11 @@ export default function LandingPage() {
       <section
         id="shifts"
         className="relative py-24 px-6"
-        style={{ position: 'relative', zIndex: 10, background: 'linear-gradient(180deg, rgba(13,21,41,0) 0%, rgba(13,21,41,0.6) 50%, rgba(13,21,41,0) 100%)' }}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          background: 'linear-gradient(180deg, rgba(13,21,41,0) 0%, rgba(13,21,41,0.6) 50%, rgba(13,21,41,0) 100%)',
+        }}
       >
         <div ref={shiftRef} className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -473,10 +459,10 @@ export default function LandingPage() {
             <Reveal delay={0.3}>
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { icon: '📍', title: '300 ft radius check',     desc: 'Verifies exact proximity to the site' },
-                  { icon: '⚡', title: 'Instant alerts',           desc: 'Out-of-range clock-in triggers admin SMS' },
-                  { icon: '🔔', title: 'Smart reminders',          desc: 'Workers notified before shift start' },
-                  { icon: '📊', title: 'Full audit trail',          desc: 'Every clock event logged with GPS' },
+                  { icon: '📍', title: '300 ft radius check',   desc: 'Verifies exact proximity to the site' },
+                  { icon: '⚡', title: 'Instant alerts',         desc: 'Out-of-range clock-in triggers instant admin alert' },
+                  { icon: '🔔', title: 'Smart reminders',        desc: 'Workers push-notified before shift start' },
+                  { icon: '📊', title: 'Full audit trail',        desc: 'Every clock event logged with GPS' },
                 ].map((item, i) => (
                   <div key={i} className="glass rounded-xl p-4">
                     <div className="text-xl mb-2">{item.icon}</div>
@@ -496,7 +482,11 @@ export default function LandingPage() {
       <section
         id="automations"
         className="relative py-24 px-6"
-        style={{ position: 'relative', zIndex: 10, background: 'linear-gradient(180deg, rgba(13,21,41,0) 0%, rgba(13,21,41,0.6) 50%, rgba(13,21,41,0) 100%)' }}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          background: 'linear-gradient(180deg, rgba(13,21,41,0) 0%, rgba(13,21,41,0.6) 50%, rgba(13,21,41,0) 100%)',
+        }}
       >
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -516,10 +506,30 @@ export default function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <AutoCard icon="📲" title="Auto Shift Filling"     delay={0}    desc="When a worker calls off via SMS, available workers are texted automatically. First to respond gets the shift." />
-            <AutoCard icon="⏰" title="Shift Reminders"        delay={0.1}  desc="Workers receive automatic reminders 24 hours and 2 hours before shift start. No more no-shows." />
-            <AutoCard icon="⚠️" title="Conflict Detection"     delay={0.2}  desc="Catches double-bookings, overlapping shifts, and scheduling errors before they happen." />
-            <AutoCard icon="🕐" title="Overtime Alerts"        delay={0.3}  desc="Get notified the moment someone approaches overtime. Stay compliant and in control of labor costs." />
+            <AutoCard
+              icon="📲"
+              title="Auto Shift Filling"
+              delay={0}
+              desc="When a worker calls off, available workers are push-notified automatically. First to respond gets the shift."
+            />
+            <AutoCard
+              icon="⏰"
+              title="Shift Reminders"
+              delay={0.1}
+              desc="Workers receive automatic push notifications 24 hours and 2 hours before shift start. No more no-shows."
+            />
+            <AutoCard
+              icon="⚠️"
+              title="Conflict Detection"
+              delay={0.2}
+              desc="Catches double-bookings, overlapping shifts, and scheduling errors before they happen."
+            />
+            <AutoCard
+              icon="🕐"
+              title="Overtime Alerts"
+              delay={0.3}
+              desc="Get notified the moment someone approaches overtime. Stay compliant and in control of labor costs."
+            />
           </div>
 
           <Reveal delay={0.4}>
@@ -548,29 +558,87 @@ export default function LandingPage() {
           <Reveal><Eyebrow>Industry Ready</Eyebrow></Reveal>
           <Reveal delay={0.1}>
             <h2 className="font-display font-bold text-4xl md:text-5xl text-white mb-4">
-              Built for field operations.{' '}
-              <span className="text-gold-gradient">Any industry.</span>
+              Laser-focused on{' '}
+              <span className="text-gold-gradient">security.</span>
             </h2>
           </Reveal>
           <Reveal delay={0.2}>
             <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-              Vantage Field works for any business where teams go to locations. Same powerful
-              platform, customized for your industry.
+              We're building the best tool for security operations first — with more industries on the way.
             </p>
           </Reveal>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          {[
-            { icon: '🛡️', name: 'Security'     },
-            { icon: '🧹', name: 'Cleaning'     },
-            { icon: '🌿', name: 'Landscaping'  },
-            { icon: '🍽️', name: 'Catering'     },
-            { icon: '🚗', name: 'Valet'        },
-            { icon: '🏠', name: 'Home Health'  },
-          ].map((ind, i) => (
-            <IndustryCard key={ind.name} {...ind} delay={i * 0.07} />
-          ))}
+        <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+          {/* Security featured card */}
+          <Reveal delay={0}>
+            <motion.div
+              className="glass-gold rounded-2xl p-8 relative"
+              style={{
+                border: '1px solid rgba(201,168,76,0.35)',
+                boxShadow: '0 0 40px rgba(201,168,76,0.08)',
+              }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div
+                className="absolute -top-3 left-6 text-xs font-bold px-3 py-1 rounded-full"
+                style={{ background: 'linear-gradient(135deg,#c9a84c,#d4b96a)', color: '#0a0f1e' }}
+              >
+                Current Focus
+              </div>
+              <div className="text-5xl mb-4">🛡️</div>
+              <div className="font-display font-bold text-xl text-white mb-2">Security</div>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Purpose-built for private security companies. GPS clock-in, armed/unarmed guard
+                tracking, incident reports, and real-time dispatch — all in one platform.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-2">
+                {['GPS Verified', 'Armed/Unarmed', 'Incident Reports', 'Real-Time'].map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs px-2.5 py-1 rounded-full"
+                    style={{
+                      background: 'rgba(201,168,76,0.12)',
+                      color: '#c9a84c',
+                      border: '1px solid rgba(201,168,76,0.2)',
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </motion.div>
+          </Reveal>
+
+          {/* Coming Soon muted card */}
+          <Reveal delay={0.1}>
+            <div
+              className="glass rounded-2xl p-8 flex flex-col items-center justify-center text-center h-full"
+              style={{
+                border: '1px solid rgba(30,58,95,0.3)',
+                opacity: 0.6,
+                cursor: 'default',
+              }}
+            >
+              <div className="text-4xl mb-4">🏗️</div>
+              <div className="font-display font-semibold text-lg text-slate-400 mb-1">
+                More Industries
+              </div>
+              <div className="text-sm text-slate-600 mb-5">Coming Soon</div>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {['Cleaning', 'Landscaping', 'Catering', 'Valet', 'Home Health'].map((ind) => (
+                  <span
+                    key={ind}
+                    className="text-xs px-2.5 py-1 rounded-full"
+                    style={{ background: 'rgba(30,58,95,0.3)', color: '#475569' }}
+                  >
+                    {ind}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </Reveal>
         </div>
       </Section>
 
@@ -580,7 +648,11 @@ export default function LandingPage() {
       <section
         id="pricing"
         className="relative py-24 px-6"
-        style={{ position: 'relative', zIndex: 10, background: 'linear-gradient(180deg, rgba(13,21,41,0) 0%, rgba(13,21,41,0.65) 50%, rgba(13,21,41,0) 100%)' }}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          background: 'linear-gradient(180deg, rgba(13,21,41,0) 0%, rgba(13,21,41,0.65) 50%, rgba(13,21,41,0) 100%)',
+        }}
       >
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -595,43 +667,48 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-8 items-start">
             <PricingCard
-              tier="Base"
-              price={200}
+              tier="Starter"
+              price={89}
               delay={0}
+              onGetStarted={goDemo}
               features={[
-                'Core scheduling',
-                'GPS clock in',
-                'Shift confirmations via SMS',
-                'Incident reports',
-                'Worker call-off',
+                'Up to 10 workers',
+                'GPS clock-in & verification',
+                'Core shift scheduling',
+                'Worker mobile app',
+                'Basic incident reports',
                 'Admin dashboard',
               ]}
             />
             <PricingCard
-              tier="Growth"
-              price={300}
+              tier="Professional"
+              price={159}
               highlight
               delay={0.1}
+              onGetStarted={goDemo}
               features={[
-                'Everything in Base',
-                'Automated shift scheduling',
-                'Payroll tracking & export',
-                'Advanced SMS notifications',
+                'Up to 30 workers',
+                'Everything in Starter',
+                'Automated push notifications',
                 'Open shift auto-fill',
+                'Payroll tracking & export',
                 'Overtime alerts',
+                'Cairn AI assistant',
               ]}
             />
             <PricingCard
-              tier="Suite"
-              price={400}
+              tier="Enterprise"
+              price={249}
               delay={0.2}
+              onGetStarted={goDemo}
               features={[
-                'Everything in Growth',
-                'Cairn AI assistant',
-                'Calendar automation',
+                'Unlimited workers',
+                'Everything in Professional',
+                'Multi-location management',
                 'Custom industry templates',
+                'Advanced analytics',
                 'Priority support',
-                'Multi-org management',
+                'API access',
               ]}
             />
           </div>
@@ -660,7 +737,7 @@ export default function LandingPage() {
         className="relative py-36 px-6 overflow-hidden"
         style={{ zIndex: 10 }}
       >
-        {/* Parallax mountain silhouette for this section */}
+        {/* Parallax mountain silhouette */}
         <motion.div
           style={{ y: ctaMtnY }}
           className="absolute inset-0 pointer-events-none"
@@ -713,7 +790,7 @@ export default function LandingPage() {
           </Reveal>
           <Reveal delay={0.25}>
             <button
-              onClick={goApp}
+              onClick={goDemo}
               className="btn-gold text-lg px-14 py-5 font-display"
             >
               Get Started Today →
@@ -737,10 +814,7 @@ export default function LandingPage() {
       >
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           {/* Brand */}
-          <div className="flex items-center gap-3">
-            <CairnIcon size={28} state="resting" />
-            <span className="font-display font-semibold text-slate-300">Vantage Field</span>
-          </div>
+          <VantageFieldLogo size={24} />
 
           {/* Links */}
           <div className="flex items-center gap-6 text-xs text-slate-500">
