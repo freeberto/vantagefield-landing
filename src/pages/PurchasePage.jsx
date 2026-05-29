@@ -1,22 +1,35 @@
-import { useState, useEffect, useCallback } from 'react'
+/**
+ * PurchasePage — /purchase
+ *
+ * Step 1: Tier selection
+ * Step 2: Request Access form  (no Stripe — email notification via EmailJS)
+ * Step 3a: Form success — CairnIcon confirmation, "we'll be in touch"
+ * Step 3b: GOLDEN success — particle burst + redirect to app.vantagefield.app/signup?plan=X
+ *
+ * EmailJS setup (one-time, ~5 min):
+ *   1. Create account at emailjs.com
+ *   2. Add service (Gmail / Outlook / etc.) → copy Service ID
+ *   3. Create template with these variables:
+ *        {{business_name}}, {{contact_name}}, {{email}}, {{phone}},
+ *        {{plan}}, {{referral}}, {{notes}}
+ *      Set "To Email" to robpetersen784@gmail.com in the template.
+ *   4. Copy Template ID + Public Key
+ *   5. Add to .env.local:
+ *        VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
+ *        VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
+ *        VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { loadStripe } from '@stripe/stripe-js'
-import {
-  Elements,
-  CardNumberElement,
-  CardExpiryElement,
-  CardCvcElement,
-  useStripe,
-  useElements,
-} from '@stripe/react-stripe-js'
+import emailjs from '@emailjs/browser'
+import CairnIcon from '../components/shared/CairnIcon'
 import VantageFieldLogo from '../components/shared/VantageFieldLogo'
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder')
 
 const SIGNUP_BASE = 'https://app.vantagefield.app/signup'
 
-/* ─── Tier definitions ──────────────────────────────────────────────── */
+/* ─── Tiers ─────────────────────────────────────────────────────────── */
 const TIERS = [
   {
     id: 'starter',
@@ -64,23 +77,12 @@ const TIERS = [
   },
 ]
 
-/* ─── Stripe element style ──────────────────────────────────────────── */
-const STRIPE_STYLE = {
-  base: {
-    color: '#e8edf5',
-    fontFamily: "'Inter', sans-serif",
-    fontSize: '15px',
-    '::placeholder': { color: '#475569' },
-  },
-  invalid: { color: '#ef4444' },
-}
-
-/* ─── Particle burst ────────────────────────────────────────────────── */
-const PARTICLES = Array.from({ length: 36 }, (_, i) => ({
+/* ─── Particle burst (GOLDEN flow) ─────────────────────────────────── */
+const PARTICLES = Array.from({ length: 40 }, (_, i) => ({
   id: i,
-  angle: (i / 36) * 360,
-  dist: 90 + Math.random() * 130,
-  size: 4 + Math.random() * 9,
+  angle: (i / 40) * 360,
+  dist: 100 + Math.random() * 150,
+  size: 4 + Math.random() * 10,
   color: i % 3 === 0 ? '#c9a84c' : i % 3 === 1 ? '#3a6b9e' : '#e8d08a',
 }))
 
@@ -91,27 +93,93 @@ function ParticleBurst({ active }) {
         {active &&
           PARTICLES.map((p) => {
             const rad = (p.angle * Math.PI) / 180
-            const x = Math.cos(rad) * p.dist
-            const y = Math.sin(rad) * p.dist
+            const x   = Math.cos(rad) * p.dist
+            const y   = Math.sin(rad) * p.dist
             return (
               <motion.div
                 key={p.id}
                 className="absolute rounded-full"
-                style={{
-                  width: p.size,
-                  height: p.size,
-                  background: p.color,
-                  top: '50%',
-                  left: '50%',
-                }}
+                style={{ width: p.size, height: p.size, background: p.color, top: '50%', left: '50%' }}
                 initial={{ x: 0, y: 0, opacity: 1, scale: 0 }}
                 animate={{ x, y, opacity: 0, scale: 1 }}
-                transition={{ duration: 0.9, ease: [0.25, 0.46, 0.45, 0.94] }}
+                transition={{ duration: 1, ease: [0.25, 0.46, 0.45, 0.94] }}
               />
             )
           })}
       </AnimatePresence>
     </div>
+  )
+}
+
+/* ─── Shared styled input ───────────────────────────────────────────── */
+function Field({ label, required, hint, children }) {
+  return (
+    <div>
+      <label className="text-xs text-slate-400 mb-1.5 block">
+        {label}
+        {required && <span style={{ color: '#c9a84c' }}> *</span>}
+        {hint && <span className="text-slate-600 ml-1">{hint}</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+const INPUT_BASE = {
+  background:   'rgba(6,11,20,0.8)',
+  border:       '1px solid rgba(30,58,95,0.6)',
+  borderRadius: 12,
+  color:        '#e8edf5',
+  outline:      'none',
+  width:        '100%',
+  fontSize:     14,
+  padding:      '12px 16px',
+  transition:   'border-color 0.2s',
+}
+
+function TextInput({ value, onChange, placeholder, required, type = 'text', ...rest }) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      required={required}
+      style={INPUT_BASE}
+      onFocus={(e) => (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
+      onBlur={(e)  => (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
+      {...rest}
+    />
+  )
+}
+
+function SelectInput({ value, onChange, children, ...rest }) {
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      style={{ ...INPUT_BASE, cursor: 'pointer' }}
+      onFocus={(e) => (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
+      onBlur={(e)  => (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
+      {...rest}
+    >
+      {children}
+    </select>
+  )
+}
+
+function TextArea({ value, onChange, placeholder, rows = 3, ...rest }) {
+  return (
+    <textarea
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      rows={rows}
+      style={{ ...INPUT_BASE, resize: 'vertical' }}
+      onFocus={(e) => (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
+      onBlur={(e)  => (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
+      {...rest}
+    />
   )
 }
 
@@ -135,13 +203,11 @@ function TierSelect({ onSelect }) {
             whileHover={{ scale: 1.03, y: -4 }}
             onClick={() => onSelect(tier)}
             style={{
-              background: tier.highlight ? 'rgba(201,168,76,0.07)' : 'rgba(10,20,38,0.6)',
-              backdropFilter: 'blur(20px)',
+              background:       tier.highlight ? 'rgba(201,168,76,0.07)' : 'rgba(10,20,38,0.6)',
+              backdropFilter:   'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)',
-              border: tier.highlight
-                ? '1px solid rgba(201,168,76,0.4)'
-                : '1px solid rgba(30,58,95,0.4)',
-              boxShadow: tier.highlight ? '0 0 40px rgba(201,168,76,0.10)' : undefined,
+              border:           tier.highlight ? '1px solid rgba(201,168,76,0.4)' : '1px solid rgba(30,58,95,0.4)',
+              boxShadow:        tier.highlight ? '0 0 40px rgba(201,168,76,0.10)' : undefined,
             }}
           >
             {tier.highlight && (
@@ -154,10 +220,7 @@ function TierSelect({ onSelect }) {
             )}
 
             <div className="mb-5">
-              <div
-                className="text-xs font-semibold tracking-widest uppercase mb-1"
-                style={{ color: '#c9a84c' }}
-              >
+              <div className="text-xs font-semibold tracking-widest uppercase mb-1" style={{ color: '#c9a84c' }}>
                 {tier.name}
               </div>
               <div className="flex items-baseline gap-1">
@@ -176,12 +239,12 @@ function TierSelect({ onSelect }) {
             </ul>
 
             <div
-              className={`w-full text-center py-3 rounded-xl font-semibold text-sm transition-all ${
+              className="w-full text-center py-3 rounded-xl font-semibold text-sm"
+              style={
                 tier.highlight
-                  ? 'btn-gold'
-                  : 'border border-slate-700 text-slate-300 hover:border-gold-500 hover:text-white'
-              }`}
-              style={!tier.highlight ? { border: '1px solid rgba(30,58,95,0.6)' } : {}}
+                  ? { background: 'linear-gradient(135deg,#c9a84c,#d4b96a)', color: '#0a0f1e' }
+                  : { border: '1px solid rgba(30,58,95,0.6)', color: '#94a3b8' }
+              }
             >
               Select {tier.name}
             </div>
@@ -190,85 +253,78 @@ function TierSelect({ onSelect }) {
       </div>
 
       <p className="text-center text-xs text-slate-600 mt-8">
-        30-day money-back guarantee · No setup fees · Cancel anytime
+        No commitment required · We'll confirm pricing on the call · Cancel anytime
       </p>
     </div>
   )
 }
 
-/* ─── Step 2: Checkout form ─────────────────────────────────────────── */
-function CheckoutStep({ tier, onSuccess, onBack }) {
-  const stripe   = useStripe()
-  const elements = useElements()
+/* ─── Step 2: Request Access form ───────────────────────────────────── */
+function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
+  const [form, setForm] = useState({
+    business: '',
+    name:     '',
+    email:    '',
+    phone:    '',
+    plan:     tier.name,
+    referral: '',
+    notes:    '',
+  })
+  const [promo,     setPromo]     = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [promoGold,  setPromoGold]  = useState(false)
 
-  const [state, setState]       = useState('idle') // idle | processing | success | error
-  const [errMsg, setErrMsg]     = useState('')
-  const [isTyping, setIsTyping] = useState(false)
-  const [burst, setBurst]       = useState(false)
-  const [name, setName]         = useState('')
-  const [email, setEmail]       = useState('')
-  const [promo, setPromo]       = useState('')
-  const [promoErr, setPromoErr] = useState('')
+  // Detect GOLDEN in real-time
+  useEffect(() => {
+    setPromoGold(promo.trim().toUpperCase() === 'GOLDEN')
+  }, [promo])
 
-  const inputStyle = {
-    background: 'rgba(6,11,20,0.8)',
-    border: '1px solid rgba(30,58,95,0.6)',
-    borderRadius: 12,
-  }
-
-  const inputClass =
-    'w-full bg-transparent rounded-xl px-4 py-3.5 text-sm text-white placeholder-slate-500 outline-none transition-all duration-200'
-
-  function triggerSuccess() {
-    setState('success')
-    setBurst(true)
-    setTimeout(() => onSuccess(tier), 1800)
-  }
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setErrMsg('')
-    setPromoErr('')
 
-    // GOLDEN promo code — bypass Stripe entirely
-    if (promo.trim().toUpperCase() === 'GOLDEN') {
-      setState('processing')
-      setTimeout(triggerSuccess, 800)
+    // GOLDEN bypass — skip form entirely
+    if (promoGold) {
+      onGolden(TIERS.find((t) => t.name === form.plan) ?? tier)
       return
     }
 
-    if (!stripe || !elements) return
-    setState('processing')
-    setIsTyping(false)
+    setSubmitting(true)
 
+    // Send via EmailJS (graceful fallback if env vars not set)
     try {
-      const res = await fetch('/api/create-payment-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name, plan: tier.id, amount: tier.price * 100 }),
-      })
+      const svcId      = import.meta.env.VITE_EMAILJS_SERVICE_ID
+      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID
+      const pubKey     = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
 
-      if (!res.ok) throw new Error('Failed to create payment intent')
-      const { clientSecret } = await res.json()
-
-      const { error: stripeError } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: elements.getElement(CardNumberElement),
-          billing_details: { name, email },
-        },
-      })
-
-      if (stripeError) {
-        setErrMsg(stripeError.message)
-        setState('error')
-        return
+      if (svcId && templateId && pubKey) {
+        await emailjs.send(
+          svcId,
+          templateId,
+          {
+            to_email:      'robpetersen784@gmail.com',
+            business_name: form.business,
+            contact_name:  form.name,
+            email:         form.email,
+            phone:         form.phone,
+            plan:          form.plan,
+            referral:      form.referral || 'Not specified',
+            notes:         form.notes    || 'None',
+          },
+          pubKey,
+        )
+      } else {
+        // Dev mode: log submission so the UX still completes
+        console.info('[PurchasePage] EmailJS not configured — form data:', form)
       }
-
-      triggerSuccess()
-    } catch {
-      // In demo / no-API mode simulate success
-      triggerSuccess()
+    } catch (err) {
+      console.error('[PurchasePage] EmailJS error:', err)
+      // Don't block UX on email failure
     }
+
+    setSubmitting(false)
+    onSuccess()
   }
 
   return (
@@ -281,68 +337,36 @@ function CheckoutStep({ tier, onSuccess, onBack }) {
         ← Change plan
       </button>
 
-      {/* Selected tier summary */}
+      {/* Selected plan summary */}
       <motion.div
-        className="glass-gold rounded-2xl p-5 mb-6"
-        initial={{ opacity: 0, y: 12 }}
+        className="rounded-2xl p-4 mb-6 flex items-center justify-between"
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        style={{ border: '1px solid rgba(201,168,76,0.25)' }}
+        style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.22)' }}
       >
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-display font-semibold text-white">
-              Vantage Field — {tier.name}
-            </div>
-            <div className="text-sm text-slate-400 mt-0.5">
-              {tier.features[0]} · All {tier.name} features
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="font-display font-bold text-2xl text-white">${tier.price}</div>
-            <div className="text-xs text-slate-500">/month</div>
-          </div>
+        <div>
+          <div className="text-xs text-slate-500 uppercase tracking-widest mb-0.5">Selected Plan</div>
+          <div className="font-display font-semibold text-white">{tier.name}</div>
+        </div>
+        <div className="text-right">
+          <div className="font-display font-bold text-xl text-white">${tier.price}</div>
+          <div className="text-xs text-slate-500">/month</div>
         </div>
       </motion.div>
 
-      {/* Form */}
       <motion.div
         className="glass rounded-2xl p-6"
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        onFocus={() => setIsTyping(true)}
-        onBlur={() => setIsTyping(false)}
+        transition={{ delay: 0.05 }}
       >
+        <h2 className="font-display font-bold text-xl text-white mb-1">Request Access</h2>
+        <p className="text-sm text-slate-400 mb-6">
+          We'll review your info and reach out within 24 hours to get you set up.
+        </p>
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name */}
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">Full Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Jane Smith"
-              required
-              className={inputClass}
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Email */}
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="jane@company.com"
-              required
-              className={inputClass}
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Promo code */}
+          {/* GOLDEN promo — always visible above form */}
           <div>
             <label className="text-xs text-slate-500 mb-1.5 block">
               Promo Code{' '}
@@ -351,130 +375,141 @@ function CheckoutStep({ tier, onSuccess, onBack }) {
             <input
               type="text"
               value={promo}
-              onChange={(e) => { setPromo(e.target.value); setPromoErr('') }}
+              onChange={(e) => setPromo(e.target.value)}
               placeholder="Enter promo code"
-              className={inputClass}
               style={{
-                ...inputStyle,
-                border: promoErr
-                  ? '1px solid rgba(239,68,68,0.6)'
-                  : promo.trim().toUpperCase() === 'GOLDEN'
-                  ? '1px solid rgba(201,168,76,0.6)'
-                  : inputStyle.border,
+                ...INPUT_BASE,
+                borderColor: promoGold
+                  ? 'rgba(201,168,76,0.7)'
+                  : 'rgba(30,58,95,0.6)',
+                boxShadow: promoGold ? '0 0 0 3px rgba(201,168,76,0.08)' : undefined,
               }}
+              onFocus={(e) => !promoGold && (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
+              onBlur={(e)  => !promoGold && (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
             />
-            {promo.trim().toUpperCase() === 'GOLDEN' && (
-              <motion.p
-                className="text-xs mt-1.5"
-                style={{ color: '#c9a84c' }}
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                ✓ Golden code applied — payment bypassed
-              </motion.p>
-            )}
-            {promoErr && (
-              <p className="text-xs mt-1.5 text-red-400">{promoErr}</p>
-            )}
+            <AnimatePresence>
+              {promoGold && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="text-xs mt-1.5 font-medium"
+                  style={{ color: '#c9a84c' }}
+                >
+                  ✓ GOLDEN access unlocked — submit to activate
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Card fields — hidden if GOLDEN applied */}
-          <AnimatePresence>
-            {promo.trim().toUpperCase() !== 'GOLDEN' && (
-              <motion.div
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
-                className="space-y-4"
-              >
-                {/* Card number */}
-                <div>
-                  <label className="text-xs text-slate-500 mb-1.5 block">Card Number</label>
-                  <div className="StripeElement">
-                    <CardNumberElement
-                      options={{ style: STRIPE_STYLE }}
-                      onFocus={() => setIsTyping(true)}
-                      onBlur={() => setIsTyping(false)}
-                    />
-                  </div>
-                </div>
+          {/* Divider */}
+          <div className="flex items-center gap-3 py-1">
+            <div className="flex-1 h-px" style={{ background: 'rgba(30,58,95,0.4)' }} />
+            <span className="text-xs text-slate-600">your details</span>
+            <div className="flex-1 h-px" style={{ background: 'rgba(30,58,95,0.4)' }} />
+          </div>
 
-                {/* Expiry + CVC */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1.5 block">Expiry</label>
-                    <div className="StripeElement">
-                      <CardExpiryElement
-                        options={{ style: STRIPE_STYLE }}
-                        onFocus={() => setIsTyping(true)}
-                        onBlur={() => setIsTyping(false)}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1.5 block">CVC</label>
-                    <div className="StripeElement">
-                      <CardCvcElement
-                        options={{ style: STRIPE_STYLE }}
-                        onFocus={() => setIsTyping(true)}
-                        onBlur={() => setIsTyping(false)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Business name */}
+          <Field label="Business Name" required>
+            <TextInput
+              value={form.business}
+              onChange={set('business')}
+              placeholder="Acme Security Co."
+              required
+            />
+          </Field>
 
-          {/* Stripe error */}
-          {errMsg && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-sm text-red-400 px-4 py-3 rounded-xl"
-              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}
-            >
-              {errMsg}
-            </motion.div>
-          )}
+          {/* Your name */}
+          <Field label="Your Name" required>
+            <TextInput
+              value={form.name}
+              onChange={set('name')}
+              placeholder="Jane Smith"
+              required
+            />
+          </Field>
+
+          {/* Email */}
+          <Field label="Email Address" required>
+            <TextInput
+              type="email"
+              value={form.email}
+              onChange={set('email')}
+              placeholder="jane@acmesecurity.com"
+              required
+            />
+          </Field>
+
+          {/* Phone */}
+          <Field label="Phone Number" required>
+            <TextInput
+              type="tel"
+              value={form.phone}
+              onChange={set('phone')}
+              placeholder="(555) 000-0000"
+              required
+            />
+          </Field>
+
+          {/* Plan — pre-filled, editable dropdown */}
+          <Field label="Plan">
+            <SelectInput value={form.plan} onChange={set('plan')}>
+              {TIERS.map((t) => (
+                <option key={t.id} value={t.name} style={{ background: '#0a0f1e' }}>
+                  {t.name} — ${t.price}/month
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+
+          {/* Referral */}
+          <Field label="How did you hear about us?" hint="(optional)">
+            <SelectInput value={form.referral} onChange={set('referral')}>
+              <option value=""          style={{ background: '#0a0f1e' }}>Select one...</option>
+              <option value="Google"    style={{ background: '#0a0f1e' }}>Google</option>
+              <option value="Referral"  style={{ background: '#0a0f1e' }}>Referral</option>
+              <option value="Social Media" style={{ background: '#0a0f1e' }}>Social Media</option>
+              <option value="Other"     style={{ background: '#0a0f1e' }}>Other</option>
+            </SelectInput>
+          </Field>
+
+          {/* Notes */}
+          <Field label="Anything else you want us to know?" hint="(optional)">
+            <TextArea
+              value={form.notes}
+              onChange={set('notes')}
+              placeholder="Team size, specific requirements, questions..."
+              rows={3}
+            />
+          </Field>
 
           {/* Submit */}
-          <div className="relative pt-2">
-            <ParticleBurst active={burst} />
-            <motion.button
-              type="submit"
-              disabled={state === 'processing' || state === 'success'}
-              className="w-full py-4 rounded-xl font-display font-bold relative overflow-hidden"
-              animate={
-                state === 'processing'
-                  ? { x: [-1, 1, -1, 1, 0], transition: { repeat: 3, duration: 0.15 } }
-                  : {}
-              }
-              style={{
-                background:
-                  state === 'success'
-                    ? 'linear-gradient(135deg,#22c55e,#16a34a)'
-                    : state === 'processing'
-                    ? 'linear-gradient(135deg,#2a4f7a,#1e3a5f)'
-                    : 'linear-gradient(135deg,#c9a84c,#d4b96a)',
-                color: state === 'processing' ? '#c9a84c' : '#0a0f1e',
-                boxShadow:
-                  state === 'success'
-                    ? '0 0 40px rgba(34,197,94,0.5)'
-                    : '0 4px 24px rgba(201,168,76,0.35)',
-                transition: 'background 0.5s, color 0.5s, box-shadow 0.5s',
-              }}
-              whileHover={state === 'idle' ? { scale: 1.02, y: -1 } : {}}
-              whileTap={state === 'idle' ? { scale: 0.98 } : {}}
-            >
-              {state === 'idle'       && `Start ${tier.name} — $${tier.price}/mo`}
-              {state === 'processing' && '⏳ Processing...'}
-              {state === 'success'    && '✓ Payment Confirmed!'}
-              {state === 'error'      && 'Try Again'}
-            </motion.button>
-          </div>
+          <motion.button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-4 rounded-xl font-display font-bold text-sm relative overflow-hidden mt-2"
+            style={{
+              background: promoGold
+                ? 'linear-gradient(135deg,#c9a84c,#d4b96a)'
+                : submitting
+                ? 'rgba(30,58,95,0.6)'
+                : 'linear-gradient(135deg,#c9a84c,#d4b96a)',
+              color: '#0a0f1e',
+              boxShadow: '0 4px 24px rgba(201,168,76,0.3)',
+              transition: 'background 0.3s',
+            }}
+            whileHover={!submitting ? { scale: 1.02, y: -1 } : {}}
+            whileTap={!submitting  ? { scale: 0.98 }        : {}}
+          >
+            {submitting
+              ? '⏳ Sending...'
+              : promoGold
+              ? '⚡ Activate GOLDEN Access'
+              : 'Request Access'}
+          </motion.button>
 
           <p className="text-center text-xs text-slate-600">
-            Secured by Stripe · Cancel anytime · 30-day money-back guarantee
+            No payment required now · We'll confirm details on a quick call
           </p>
         </form>
       </motion.div>
@@ -482,9 +517,79 @@ function CheckoutStep({ tier, onSuccess, onBack }) {
   )
 }
 
-/* ─── Step 3: Success screen ────────────────────────────────────────── */
-function SuccessScreen({ tier }) {
+/* ─── Step 3a: Form success (normal submit) ─────────────────────────── */
+function FormSuccess() {
+  return (
+    <motion.div
+      className="text-center max-w-md mx-auto py-8"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      {/* Cairn */}
+      <motion.div
+        className="flex justify-center mb-6"
+        initial={{ scale: 0.7, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+      >
+        <CairnIcon size={90} state="resting" />
+      </motion.div>
+
+      {/* Headline */}
+      <motion.h1
+        className="font-display font-bold text-3xl text-white mb-3"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+      >
+        Request received.
+      </motion.h1>
+
+      <motion.p
+        className="text-slate-400 mb-8 leading-relaxed"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.35 }}
+      >
+        We'll be in touch within 24 hours to get your operation set up.
+      </motion.p>
+
+      {/* Cairn bubble */}
+      <motion.div
+        className="glass-gold rounded-2xl p-6 text-left"
+        style={{ boxShadow: '0 0 32px rgba(201,168,76,0.09)', border: '1px solid rgba(201,168,76,0.22)' }}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.45 }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} />
+          <span className="text-xs text-slate-500">Cairn</span>
+        </div>
+        <p className="text-sm text-slate-300 leading-relaxed">
+          Welcome to the waitlist. We'll have you up and running shortly.
+        </p>
+      </motion.div>
+
+      <motion.p
+        className="text-xs text-slate-600 mt-8"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+      >
+        Keep an eye on{' '}
+        <span className="text-slate-500">robpetersen784@gmail.com</span>
+        {' '}— that's where our reply will land.
+      </motion.p>
+    </motion.div>
+  )
+}
+
+/* ─── Step 3b: GOLDEN success (particle burst + redirect) ───────────── */
+function GoldenSuccess({ tier }) {
   const [countdown, setCountdown] = useState(3)
+  const [burst, setBurst]         = useState(true)
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -502,45 +607,53 @@ function SuccessScreen({ tier }) {
 
   return (
     <motion.div
-      className="text-center max-w-md mx-auto"
+      className="text-center max-w-md mx-auto relative"
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.45 }}
     >
       {/* Burst rings */}
       <div className="relative flex items-center justify-center mb-8">
+        <ParticleBurst active={burst} />
         {[0, 1, 2].map((i) => (
           <motion.div
             key={i}
             className="absolute rounded-full border"
             style={{ borderColor: 'rgba(201,168,76,0.3)' }}
             initial={{ width: 80, height: 80, opacity: 1 }}
-            animate={{ width: 80 + i * 60, height: 80 + i * 60, opacity: 0 }}
-            transition={{ duration: 1.5, delay: i * 0.3, repeat: Infinity, ease: 'easeOut' }}
+            animate={{ width: 80 + i * 70, height: 80 + i * 70, opacity: 0 }}
+            transition={{ duration: 1.6, delay: i * 0.28, repeat: Infinity, ease: 'easeOut' }}
           />
         ))}
         <motion.div
-          className="w-20 h-20 rounded-full flex items-center justify-center relative z-10"
-          style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}
-          animate={{ boxShadow: ['0 0 20px rgba(34,197,94,0.4)', '0 0 50px rgba(34,197,94,0.7)', '0 0 20px rgba(34,197,94,0.4)'] }}
-          transition={{ duration: 2, repeat: Infinity }}
+          className="w-20 h-20 rounded-full flex items-center justify-center relative z-10 text-4xl"
+          style={{ background: 'linear-gradient(135deg,#c9a84c,#d4b96a)' }}
+          animate={{
+            boxShadow: [
+              '0 0 20px rgba(201,168,76,0.5)',
+              '0 0 60px rgba(201,168,76,0.9)',
+              '0 0 20px rgba(201,168,76,0.5)',
+            ],
+          }}
+          transition={{ duration: 1.8, repeat: Infinity }}
         >
-          <span className="text-4xl">✓</span>
+          ⚡
         </motion.div>
       </div>
 
       <h1 className="font-display font-bold text-3xl text-white mb-3">
-        Welcome to Vantage Field!
+        GOLDEN access activated.
       </h1>
       <p className="text-slate-400 mb-2">
-        Your <span className="text-white font-semibold">{tier.name}</span> account is ready.
+        Account ready — <span className="text-white font-semibold">{tier.name}</span> plan.
       </p>
       <p className="text-slate-500 text-sm">
         Redirecting to setup in {countdown}...
       </p>
 
       <motion.button
-        className="mt-8 btn-gold px-10 py-4 font-display"
+        className="mt-8 py-4 px-12 rounded-xl font-display font-bold text-sm"
+        style={{ background: 'linear-gradient(135deg,#c9a84c,#d4b96a)', color: '#0a0f1e' }}
         onClick={() => { window.location.href = `${SIGNUP_BASE}?plan=${tier.id}` }}
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
@@ -551,19 +664,25 @@ function SuccessScreen({ tier }) {
   )
 }
 
-/* ─── Page wrapper ──────────────────────────────────────────────────── */
+/* ─── Page ───────────────────────────────────────────────────────────── */
 export default function PurchasePage() {
   const navigate = useNavigate()
-  const [step, setStep]         = useState('select') // 'select' | 'checkout' | 'success'
-  const [selectedTier, setTier] = useState(null)
+  // steps: 'select' | 'form' | 'success' | 'golden-success'
+  const [step, setStep]   = useState('select')
+  const [tier, setTier]   = useState(null)
 
-  const handleTierSelect = useCallback((tier) => {
-    setTier(tier)
-    setStep('checkout')
+  const handleTierSelect = useCallback((t) => {
+    setTier(t)
+    setStep('form')
   }, [])
 
-  const handleSuccess = useCallback((tier) => {
+  const handleSuccess = useCallback(() => {
     setStep('success')
+  }, [])
+
+  const handleGolden = useCallback((t) => {
+    setTier(t)
+    setStep('golden-success')
   }, [])
 
   return (
@@ -582,7 +701,9 @@ export default function PurchasePage() {
           <VantageFieldLogo size={28} />
         </button>
         <button
-          onClick={() => step === 'select' ? navigate('/demo') : setStep('select')}
+          onClick={() =>
+            step === 'select' ? navigate('/demo') : setStep('select')
+          }
           className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
         >
           ← Back
@@ -592,49 +713,63 @@ export default function PurchasePage() {
       {/* Body */}
       <div className="px-6 py-14">
         <AnimatePresence mode="wait">
+
           {step === 'select' && (
             <motion.div
               key="select"
+              className="max-w-5xl mx-auto"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.3 }}
-              className="max-w-5xl mx-auto"
             >
               <TierSelect onSelect={handleTierSelect} />
             </motion.div>
           )}
 
-          {step === 'checkout' && selectedTier && (
+          {step === 'form' && tier && (
             <motion.div
-              key="checkout"
+              key="form"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.3 }}
             >
-              <Elements stripe={stripePromise}>
-                <CheckoutStep
-                  tier={selectedTier}
-                  onSuccess={handleSuccess}
-                  onBack={() => setStep('select')}
-                />
-              </Elements>
+              <RequestAccessForm
+                tier={tier}
+                onSuccess={handleSuccess}
+                onGolden={handleGolden}
+                onBack={() => setStep('select')}
+              />
             </motion.div>
           )}
 
-          {step === 'success' && selectedTier && (
+          {step === 'success' && (
             <motion.div
               key="success"
+              className="flex items-center justify-center min-h-[60vh]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <FormSuccess />
+            </motion.div>
+          )}
+
+          {step === 'golden-success' && tier && (
+            <motion.div
+              key="golden-success"
+              className="flex items-center justify-center min-h-[60vh]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="flex items-center justify-center min-h-[60vh]"
             >
-              <SuccessScreen tier={selectedTier} />
+              <GoldenSuccess tier={tier} />
             </motion.div>
           )}
+
         </AnimatePresence>
       </div>
     </div>

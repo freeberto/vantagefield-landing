@@ -4,32 +4,41 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 })
 
+// Allowed plan amounts (cents) — guards against client-side tampering
+const PLAN_AMOUNTS = {
+  starter:      8900,
+  professional: 15900,
+  enterprise:   24900,
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { email, name } = req.body
+  const { email, name, plan } = req.body
 
   if (!email || !name) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
+  const amount = PLAN_AMOUNTS[plan] ?? PLAN_AMOUNTS.professional
+
   try {
-    // Create or retrieve customer
-    const customers = await stripe.customers.list({ email, limit: 1 })
-    let customer = customers.data[0]
+    // Create or retrieve Stripe customer
+    const existing = await stripe.customers.list({ email, limit: 1 })
+    let customer = existing.data[0]
     if (!customer) {
       customer = await stripe.customers.create({ email, name })
     }
 
-    // Create PaymentIntent — $99/month
+    // Create PaymentIntent
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 9900, // cents
+      amount,
       currency: 'usd',
       customer: customer.id,
-      metadata: { name, email },
-      description: 'Vantage Field Pro — Monthly',
+      metadata: { name, email, plan: plan ?? 'professional' },
+      description: `Vantage Field ${plan ?? 'Professional'} — Monthly`,
     })
 
     res.status(200).json({ clientSecret: paymentIntent.client_secret })
