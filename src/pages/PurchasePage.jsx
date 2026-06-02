@@ -2,41 +2,30 @@
  * PurchasePage — /purchase
  *
  * Step 1: Tier selection
- * Step 2: Request Access form  (no Stripe — email notification via EmailJS)
- * Step 3a: Form success — CairnIcon confirmation, "we'll be in touch"
+ * Step 2: Request Access form  →  inserts to Supabase access_requests table
+ *                                  Database Webhook fires notify-access-request Edge Function
+ *                                  which emails robpetersen784@gmail.com via Resend
+ * Step 3a: Form success — CairnIcon confirmation, "we'll be in touch within 24 hours"
  * Step 3b: GOLDEN success — particle burst + redirect to app.vantagefield.app/signup?plan=X
- *
- * EmailJS setup (one-time, ~5 min):
- *   1. Create account at emailjs.com
- *   2. Add service (Gmail / Outlook / etc.) → copy Service ID
- *   3. Create template with these variables:
- *        {{business_name}}, {{contact_name}}, {{email}}, {{phone}},
- *        {{plan}}, {{referral}}, {{notes}}
- *      Set "To Email" to robpetersen784@gmail.com in the template.
- *   4. Copy Template ID + Public Key
- *   5. Add to .env.local:
- *        VITE_EMAILJS_SERVICE_ID=service_xxxxxxx
- *        VITE_EMAILJS_TEMPLATE_ID=template_xxxxxxx
- *        VITE_EMAILJS_PUBLIC_KEY=xxxxxxxxxxxxxxx
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import emailjs from '@emailjs/browser'
-import CairnIcon from '../components/shared/CairnIcon'
-import VantageFieldLogo from '../components/shared/VantageFieldLogo'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate }                       from 'react-router-dom'
+import { motion, AnimatePresence }           from 'framer-motion'
+import { supabase }                          from '../lib/supabase'
+import CairnIcon                             from '../components/shared/CairnIcon'
+import VantageFieldLogo                      from '../components/shared/VantageFieldLogo'
 
 const SIGNUP_BASE = 'https://app.vantagefield.app/signup'
 
 /* ─── Tiers ─────────────────────────────────────────────────────────── */
 const TIERS = [
   {
-    id: 'starter',
-    name: 'Starter',
-    price: 89,
+    id:        'starter',
+    name:      'Starter',
+    price:     89,
     highlight: false,
-    features: [
+    features:  [
       'Up to 10 workers',
       'GPS clock-in & verification',
       'Core shift scheduling',
@@ -46,11 +35,11 @@ const TIERS = [
     ],
   },
   {
-    id: 'professional',
-    name: 'Professional',
-    price: 159,
+    id:        'professional',
+    name:      'Professional',
+    price:     159,
     highlight: true,
-    features: [
+    features:  [
       'Up to 30 workers',
       'Everything in Starter',
       'Automated push notifications',
@@ -61,11 +50,11 @@ const TIERS = [
     ],
   },
   {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: 249,
+    id:        'enterprise',
+    name:      'Enterprise',
+    price:     249,
     highlight: false,
-    features: [
+    features:  [
       'Unlimited workers',
       'Everything in Professional',
       'Multi-location management',
@@ -79,10 +68,10 @@ const TIERS = [
 
 /* ─── Particle burst (GOLDEN flow) ─────────────────────────────────── */
 const PARTICLES = Array.from({ length: 40 }, (_, i) => ({
-  id: i,
+  id:    i,
   angle: (i / 40) * 360,
-  dist: 100 + Math.random() * 150,
-  size: 4 + Math.random() * 10,
+  dist:  100 + Math.random() * 150,
+  size:  4   + Math.random() * 10,
   color: i % 3 === 0 ? '#c9a84c' : i % 3 === 1 ? '#3a6b9e' : '#e8d08a',
 }))
 
@@ -111,7 +100,7 @@ function ParticleBurst({ active }) {
   )
 }
 
-/* ─── Shared styled input ───────────────────────────────────────────── */
+/* ─── Shared form inputs ────────────────────────────────────────────── */
 function Field({ label, required, hint, children }) {
   return (
     <div>
@@ -125,7 +114,7 @@ function Field({ label, required, hint, children }) {
   )
 }
 
-const INPUT_BASE = {
+const BASE_STYLE = {
   background:   'rgba(6,11,20,0.8)',
   border:       '1px solid rgba(30,58,95,0.6)',
   borderRadius: 12,
@@ -134,51 +123,45 @@ const INPUT_BASE = {
   width:        '100%',
   fontSize:     14,
   padding:      '12px 16px',
-  transition:   'border-color 0.2s',
+  transition:   'border-color 0.2s, box-shadow 0.2s',
 }
 
-function TextInput({ value, onChange, placeholder, required, type = 'text', ...rest }) {
+const FOCUS_BORDER = 'rgba(201,168,76,0.5)'
+const IDLE_BORDER  = 'rgba(30,58,95,0.6)'
+
+function TextInput({ value, onChange, placeholder, required, type = 'text' }) {
   return (
     <input
-      type={type}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      required={required}
-      style={INPUT_BASE}
-      onFocus={(e) => (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
-      onBlur={(e)  => (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
-      {...rest}
+      type={type} value={value} onChange={onChange}
+      placeholder={placeholder} required={required}
+      style={BASE_STYLE}
+      onFocus={(e) => (e.target.style.borderColor = FOCUS_BORDER)}
+      onBlur={(e)  => (e.target.style.borderColor = IDLE_BORDER)}
     />
   )
 }
 
-function SelectInput({ value, onChange, children, ...rest }) {
+function SelectInput({ value, onChange, children }) {
   return (
     <select
-      value={value}
-      onChange={onChange}
-      style={{ ...INPUT_BASE, cursor: 'pointer' }}
-      onFocus={(e) => (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
-      onBlur={(e)  => (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
-      {...rest}
+      value={value} onChange={onChange}
+      style={{ ...BASE_STYLE, cursor: 'pointer' }}
+      onFocus={(e) => (e.target.style.borderColor = FOCUS_BORDER)}
+      onBlur={(e)  => (e.target.style.borderColor = IDLE_BORDER)}
     >
       {children}
     </select>
   )
 }
 
-function TextArea({ value, onChange, placeholder, rows = 3, ...rest }) {
+function TextAreaInput({ value, onChange, placeholder, rows = 3 }) {
   return (
     <textarea
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      rows={rows}
-      style={{ ...INPUT_BASE, resize: 'vertical' }}
-      onFocus={(e) => (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
-      onBlur={(e)  => (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
-      {...rest}
+      value={value} onChange={onChange}
+      placeholder={placeholder} rows={rows}
+      style={{ ...BASE_STYLE, resize: 'vertical' }}
+      onFocus={(e) => (e.target.style.borderColor = FOCUS_BORDER)}
+      onBlur={(e)  => (e.target.style.borderColor = IDLE_BORDER)}
     />
   )
 }
@@ -203,11 +186,11 @@ function TierSelect({ onSelect }) {
             whileHover={{ scale: 1.03, y: -4 }}
             onClick={() => onSelect(tier)}
             style={{
-              background:       tier.highlight ? 'rgba(201,168,76,0.07)' : 'rgba(10,20,38,0.6)',
-              backdropFilter:   'blur(20px)',
+              background:           tier.highlight ? 'rgba(201,168,76,0.07)' : 'rgba(10,20,38,0.6)',
+              backdropFilter:       'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)',
-              border:           tier.highlight ? '1px solid rgba(201,168,76,0.4)' : '1px solid rgba(30,58,95,0.4)',
-              boxShadow:        tier.highlight ? '0 0 40px rgba(201,168,76,0.10)' : undefined,
+              border:               tier.highlight ? '1px solid rgba(201,168,76,0.4)' : '1px solid rgba(30,58,95,0.4)',
+              boxShadow:            tier.highlight ? '0 0 40px rgba(201,168,76,0.10)' : undefined,
             }}
           >
             {tier.highlight && (
@@ -253,7 +236,7 @@ function TierSelect({ onSelect }) {
       </div>
 
       <p className="text-center text-xs text-slate-600 mt-8">
-        No commitment required · We'll confirm pricing on the call · Cancel anytime
+        No payment required · We'll confirm details on a quick call · Cancel anytime
       </p>
     </div>
   )
@@ -270,60 +253,50 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
     referral: '',
     notes:    '',
   })
-  const [promo,     setPromo]     = useState('')
+  const [promo,      setPromo]      = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [promoGold,  setPromoGold]  = useState(false)
+  const [error,      setError]      = useState('')
 
-  // Detect GOLDEN in real-time
-  useEffect(() => {
-    setPromoGold(promo.trim().toUpperCase() === 'GOLDEN')
-  }, [promo])
-
+  const isGolden = promo.trim().toUpperCase() === 'GOLDEN'
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
   async function handleSubmit(e) {
     e.preventDefault()
+    setError('')
 
-    // GOLDEN bypass — skip form entirely
-    if (promoGold) {
+    // GOLDEN bypass — skip DB insert, straight to explosion
+    if (isGolden) {
       onGolden(TIERS.find((t) => t.name === form.plan) ?? tier)
       return
     }
 
     setSubmitting(true)
 
-    // Send via EmailJS (graceful fallback if env vars not set)
-    try {
-      const svcId      = import.meta.env.VITE_EMAILJS_SERVICE_ID
-      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID
-      const pubKey     = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-
-      if (svcId && templateId && pubKey) {
-        await emailjs.send(
-          svcId,
-          templateId,
-          {
-            to_email:      'robpetersen784@gmail.com',
-            business_name: form.business,
-            contact_name:  form.name,
-            email:         form.email,
-            phone:         form.phone,
-            plan:          form.plan,
-            referral:      form.referral || 'Not specified',
-            notes:         form.notes    || 'None',
-          },
-          pubKey,
-        )
-      } else {
-        // Dev mode: log submission so the UX still completes
-        console.info('[PurchasePage] EmailJS not configured — form data:', form)
-      }
-    } catch (err) {
-      console.error('[PurchasePage] EmailJS error:', err)
-      // Don't block UX on email failure
-    }
+    // Insert into Supabase — Database Webhook fires Edge Function → email
+    const { error: dbErr } = await supabase
+      .from('access_requests')
+      .insert({
+        business_name: form.business,
+        contact_name:  form.name,
+        email:         form.email,
+        phone:         form.phone,
+        plan:          form.plan,
+        referral:      form.referral || null,
+        notes:         form.notes    || null,
+      })
 
     setSubmitting(false)
+
+    if (dbErr) {
+      console.error('[PurchasePage] Supabase insert error:', dbErr)
+      // Surface user-friendly error but don't block — still show success
+      // so a transient DB hiccup doesn't hurt conversion
+      if (dbErr.code !== 'PGRST301') {
+        setError('Something went wrong saving your request. Please email us directly at robpetersen784@gmail.com.')
+        return
+      }
+    }
+
     onSuccess()
   }
 
@@ -337,7 +310,7 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
         ← Change plan
       </button>
 
-      {/* Selected plan summary */}
+      {/* Plan badge */}
       <motion.div
         className="rounded-2xl p-4 mb-6 flex items-center justify-between"
         initial={{ opacity: 0, y: 10 }}
@@ -366,11 +339,10 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* GOLDEN promo — always visible above form */}
+          {/* GOLDEN promo — above the form */}
           <div>
             <label className="text-xs text-slate-500 mb-1.5 block">
-              Promo Code{' '}
-              <span className="text-slate-600">(optional)</span>
+              Promo Code <span className="text-slate-600">(optional)</span>
             </label>
             <input
               type="text"
@@ -378,17 +350,15 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
               onChange={(e) => setPromo(e.target.value)}
               placeholder="Enter promo code"
               style={{
-                ...INPUT_BASE,
-                borderColor: promoGold
-                  ? 'rgba(201,168,76,0.7)'
-                  : 'rgba(30,58,95,0.6)',
-                boxShadow: promoGold ? '0 0 0 3px rgba(201,168,76,0.08)' : undefined,
+                ...BASE_STYLE,
+                borderColor: isGolden ? 'rgba(201,168,76,0.7)' : IDLE_BORDER,
+                boxShadow:   isGolden ? '0 0 0 3px rgba(201,168,76,0.08)' : undefined,
               }}
-              onFocus={(e) => !promoGold && (e.target.style.borderColor = 'rgba(201,168,76,0.5)')}
-              onBlur={(e)  => !promoGold && (e.target.style.borderColor = 'rgba(30,58,95,0.6)')}
+              onFocus={(e) => !isGolden && (e.target.style.borderColor = FOCUS_BORDER)}
+              onBlur={(e)  => !isGolden && (e.target.style.borderColor = IDLE_BORDER)}
             />
             <AnimatePresence>
-              {promoGold && (
+              {isGolden && (
                 <motion.p
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -411,47 +381,25 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
 
           {/* Business name */}
           <Field label="Business Name" required>
-            <TextInput
-              value={form.business}
-              onChange={set('business')}
-              placeholder="Acme Security Co."
-              required
-            />
+            <TextInput value={form.business} onChange={set('business')} placeholder="Acme Security Co." required />
           </Field>
 
           {/* Your name */}
           <Field label="Your Name" required>
-            <TextInput
-              value={form.name}
-              onChange={set('name')}
-              placeholder="Jane Smith"
-              required
-            />
+            <TextInput value={form.name} onChange={set('name')} placeholder="Jane Smith" required />
           </Field>
 
           {/* Email */}
           <Field label="Email Address" required>
-            <TextInput
-              type="email"
-              value={form.email}
-              onChange={set('email')}
-              placeholder="jane@acmesecurity.com"
-              required
-            />
+            <TextInput type="email" value={form.email} onChange={set('email')} placeholder="jane@acmesecurity.com" required />
           </Field>
 
           {/* Phone */}
           <Field label="Phone Number" required>
-            <TextInput
-              type="tel"
-              value={form.phone}
-              onChange={set('phone')}
-              placeholder="(555) 000-0000"
-              required
-            />
+            <TextInput type="tel" value={form.phone} onChange={set('phone')} placeholder="(555) 000-0000" required />
           </Field>
 
-          {/* Plan — pre-filled, editable dropdown */}
+          {/* Plan — pre-filled, editable */}
           <Field label="Plan">
             <SelectInput value={form.plan} onChange={set('plan')}>
               {TIERS.map((t) => (
@@ -465,17 +413,17 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
           {/* Referral */}
           <Field label="How did you hear about us?" hint="(optional)">
             <SelectInput value={form.referral} onChange={set('referral')}>
-              <option value=""          style={{ background: '#0a0f1e' }}>Select one...</option>
-              <option value="Google"    style={{ background: '#0a0f1e' }}>Google</option>
-              <option value="Referral"  style={{ background: '#0a0f1e' }}>Referral</option>
+              <option value=""             style={{ background: '#0a0f1e' }}>Select one...</option>
+              <option value="Google"       style={{ background: '#0a0f1e' }}>Google</option>
+              <option value="Referral"     style={{ background: '#0a0f1e' }}>Referral</option>
               <option value="Social Media" style={{ background: '#0a0f1e' }}>Social Media</option>
-              <option value="Other"     style={{ background: '#0a0f1e' }}>Other</option>
+              <option value="Other"        style={{ background: '#0a0f1e' }}>Other</option>
             </SelectInput>
           </Field>
 
           {/* Notes */}
           <Field label="Anything else you want us to know?" hint="(optional)">
-            <TextArea
+            <TextAreaInput
               value={form.notes}
               onChange={set('notes')}
               placeholder="Team size, specific requirements, questions..."
@@ -483,27 +431,40 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
             />
           </Field>
 
+          {/* DB error */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="text-sm text-red-400 px-4 py-3 rounded-xl"
+                style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}
+              >
+                {error}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Submit */}
           <motion.button
             type="submit"
             disabled={submitting}
-            className="w-full py-4 rounded-xl font-display font-bold text-sm relative overflow-hidden mt-2"
+            className="w-full py-4 rounded-xl font-display font-bold text-sm mt-2"
             style={{
-              background: promoGold
-                ? 'linear-gradient(135deg,#c9a84c,#d4b96a)'
-                : submitting
+              background: submitting
                 ? 'rgba(30,58,95,0.6)'
                 : 'linear-gradient(135deg,#c9a84c,#d4b96a)',
-              color: '#0a0f1e',
-              boxShadow: '0 4px 24px rgba(201,168,76,0.3)',
-              transition: 'background 0.3s',
+              color:     submitting ? '#c9a84c' : '#0a0f1e',
+              boxShadow: '0 4px 24px rgba(201,168,76,0.28)',
+              transition: 'background 0.3s, color 0.3s',
             }}
             whileHover={!submitting ? { scale: 1.02, y: -1 } : {}}
-            whileTap={!submitting  ? { scale: 0.98 }        : {}}
+            whileTap={!submitting   ? { scale: 0.98 }         : {}}
           >
             {submitting
               ? '⏳ Sending...'
-              : promoGold
+              : isGolden
               ? '⚡ Activate GOLDEN Access'
               : 'Request Access'}
           </motion.button>
@@ -517,7 +478,7 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
   )
 }
 
-/* ─── Step 3a: Form success (normal submit) ─────────────────────────── */
+/* ─── Step 3a: Normal form success ──────────────────────────────────── */
 function FormSuccess() {
   return (
     <motion.div
@@ -526,7 +487,6 @@ function FormSuccess() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      {/* Cairn */}
       <motion.div
         className="flex justify-center mb-6"
         initial={{ scale: 0.7, opacity: 0 }}
@@ -536,7 +496,6 @@ function FormSuccess() {
         <CairnIcon size={90} state="resting" />
       </motion.div>
 
-      {/* Headline */}
       <motion.h1
         className="font-display font-bold text-3xl text-white mb-3"
         initial={{ opacity: 0, y: 10 }}
@@ -555,33 +514,21 @@ function FormSuccess() {
         We'll be in touch within 24 hours to get your operation set up.
       </motion.p>
 
-      {/* Cairn bubble */}
       <motion.div
         className="glass-gold rounded-2xl p-6 text-left"
-        style={{ boxShadow: '0 0 32px rgba(201,168,76,0.09)', border: '1px solid rgba(201,168,76,0.22)' }}
+        style={{ border: '1px solid rgba(201,168,76,0.22)', boxShadow: '0 0 32px rgba(201,168,76,0.07)' }}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.45 }}
       >
         <div className="flex items-center gap-2 mb-3">
-          <span className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} />
+          <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#22c55e' }} />
           <span className="text-xs text-slate-500">Cairn</span>
         </div>
         <p className="text-sm text-slate-300 leading-relaxed">
           Welcome to the waitlist. We'll have you up and running shortly.
         </p>
       </motion.div>
-
-      <motion.p
-        className="text-xs text-slate-600 mt-8"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6 }}
-      >
-        Keep an eye on{' '}
-        <span className="text-slate-500">robpetersen784@gmail.com</span>
-        {' '}— that's where our reply will land.
-      </motion.p>
     </motion.div>
   )
 }
@@ -589,7 +536,6 @@ function FormSuccess() {
 /* ─── Step 3b: GOLDEN success (particle burst + redirect) ───────────── */
 function GoldenSuccess({ tier }) {
   const [countdown, setCountdown] = useState(3)
-  const [burst, setBurst]         = useState(true)
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -612,15 +558,14 @@ function GoldenSuccess({ tier }) {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.45 }}
     >
-      {/* Burst rings */}
       <div className="relative flex items-center justify-center mb-8">
-        <ParticleBurst active={burst} />
+        <ParticleBurst active />
         {[0, 1, 2].map((i) => (
           <motion.div
             key={i}
             className="absolute rounded-full border"
             style={{ borderColor: 'rgba(201,168,76,0.3)' }}
-            initial={{ width: 80, height: 80, opacity: 1 }}
+            initial={{ width: 80,  height: 80,  opacity: 1 }}
             animate={{ width: 80 + i * 70, height: 80 + i * 70, opacity: 0 }}
             transition={{ duration: 1.6, delay: i * 0.28, repeat: Infinity, ease: 'easeOut' }}
           />
@@ -628,13 +573,7 @@ function GoldenSuccess({ tier }) {
         <motion.div
           className="w-20 h-20 rounded-full flex items-center justify-center relative z-10 text-4xl"
           style={{ background: 'linear-gradient(135deg,#c9a84c,#d4b96a)' }}
-          animate={{
-            boxShadow: [
-              '0 0 20px rgba(201,168,76,0.5)',
-              '0 0 60px rgba(201,168,76,0.9)',
-              '0 0 20px rgba(201,168,76,0.5)',
-            ],
-          }}
+          animate={{ boxShadow: ['0 0 20px rgba(201,168,76,0.5)', '0 0 60px rgba(201,168,76,0.9)', '0 0 20px rgba(201,168,76,0.5)'] }}
           transition={{ duration: 1.8, repeat: Infinity }}
         >
           ⚡
@@ -647,9 +586,7 @@ function GoldenSuccess({ tier }) {
       <p className="text-slate-400 mb-2">
         Account ready — <span className="text-white font-semibold">{tier.name}</span> plan.
       </p>
-      <p className="text-slate-500 text-sm">
-        Redirecting to setup in {countdown}...
-      </p>
+      <p className="text-slate-500 text-sm">Redirecting to setup in {countdown}...</p>
 
       <motion.button
         className="mt-8 py-4 px-12 rounded-xl font-display font-bold text-sm"
@@ -667,30 +604,17 @@ function GoldenSuccess({ tier }) {
 /* ─── Page ───────────────────────────────────────────────────────────── */
 export default function PurchasePage() {
   const navigate = useNavigate()
-  // steps: 'select' | 'form' | 'success' | 'golden-success'
-  const [step, setStep]   = useState('select')
-  const [tier, setTier]   = useState(null)
+  const [step, setStep] = useState('select')   // 'select' | 'form' | 'success' | 'golden-success'
+  const [tier, setTier] = useState(null)
 
-  const handleTierSelect = useCallback((t) => {
-    setTier(t)
-    setStep('form')
-  }, [])
-
-  const handleSuccess = useCallback(() => {
-    setStep('success')
-  }, [])
-
-  const handleGolden = useCallback((t) => {
-    setTier(t)
-    setStep('golden-success')
-  }, [])
+  const handleTierSelect = useCallback((t) => { setTier(t); setStep('form')           }, [])
+  const handleSuccess    = useCallback(()    => { setStep('success')                   }, [])
+  const handleGolden     = useCallback((t)   => { setTier(t); setStep('golden-success')}, [])
 
   return (
     <div
       className="min-h-screen"
-      style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(30,58,95,0.25) 0%, #0a0f1e 60%)',
-      }}
+      style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(30,58,95,0.25) 0%, #0a0f1e 60%)' }}
     >
       {/* Header */}
       <div
@@ -701,9 +625,7 @@ export default function PurchasePage() {
           <VantageFieldLogo size={28} />
         </button>
         <button
-          onClick={() =>
-            step === 'select' ? navigate('/demo') : setStep('select')
-          }
+          onClick={() => step === 'select' ? navigate('/demo') : setStep('select')}
           className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
         >
           ← Back
@@ -715,26 +637,17 @@ export default function PurchasePage() {
         <AnimatePresence mode="wait">
 
           {step === 'select' && (
-            <motion.div
-              key="select"
-              className="max-w-5xl mx-auto"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.3 }}
-            >
+            <motion.div key="select" className="max-w-5xl mx-auto"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }} transition={{ duration: 0.3 }}>
               <TierSelect onSelect={handleTierSelect} />
             </motion.div>
           )}
 
           {step === 'form' && tier && (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.3 }}
-            >
+            <motion.div key="form"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }} transition={{ duration: 0.3 }}>
               <RequestAccessForm
                 tier={tier}
                 onSuccess={handleSuccess}
@@ -745,27 +658,19 @@ export default function PurchasePage() {
           )}
 
           {step === 'success' && (
-            <motion.div
-              key="success"
+            <motion.div key="success"
               className="flex items-center justify-center min-h-[60vh]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
-            >
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
               <FormSuccess />
             </motion.div>
           )}
 
           {step === 'golden-success' && tier && (
-            <motion.div
-              key="golden-success"
+            <motion.div key="golden-success"
               className="flex items-center justify-center min-h-[60vh]"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
-            >
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
               <GoldenSuccess tier={tier} />
             </motion.div>
           )}
