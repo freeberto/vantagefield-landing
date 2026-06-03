@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import RetroTunnel        from '../components/landing/RetroTunnel'
 import DashboardMockup    from '../components/landing/DashboardMockup'
@@ -818,8 +818,8 @@ export default function LandingPage() {
 
           {/* Links */}
           <div className="flex items-center gap-6 text-xs text-slate-500">
-            <a href="#" className="hover:text-slate-300 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-slate-300 transition-colors">Terms of Service</a>
+            <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
+            <Link to="/terms"   className="hover:text-slate-300 transition-colors">Terms of Service</Link>
             <a href="mailto:hello@vantagebusinesssolutions.com" className="hover:text-slate-300 transition-colors">Contact</a>
           </div>
 
