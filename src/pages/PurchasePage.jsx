@@ -292,7 +292,7 @@ function RequestAccessForm({ tier, onSuccess, onGolden, onBack }) {
       // Surface user-friendly error but don't block — still show success
       // so a transient DB hiccup doesn't hurt conversion
       if (dbErr.code !== 'PGRST301') {
-        setError('Something went wrong saving your request. Please email us directly at robpetersen784@gmail.com.')
+        setError('Something went wrong saving your request. Please email us directly at robert@vantagefield.app.')
         return
       }
     }
