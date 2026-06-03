@@ -820,7 +820,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-6 text-xs text-slate-500">
             <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
             <Link to="/terms"   className="hover:text-slate-300 transition-colors">Terms of Service</Link>
-            <a href="mailto:hello@vantagebusinesssolutions.com" className="hover:text-slate-300 transition-colors">Contact</a>
+            <a href="mailto:robert@vantagefield.app" className="hover:text-slate-300 transition-colors">Contact</a>
           </div>
 
           {/* Attribution */}

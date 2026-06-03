@@ -4,7 +4,7 @@
  * Step 1: Tier selection
  * Step 2: Request Access form  →  inserts to Supabase access_requests table
  *                                  Database Webhook fires notify-access-request Edge Function
- *                                  which emails robpetersen784@gmail.com via Resend
+ *                                  which emails robert@vantagefield.app via Resend
  * Step 3a: Form success — CairnIcon confirmation, "we'll be in touch within 24 hours"
  * Step 3b: GOLDEN success — particle burst + redirect to app.vantagefield.app/signup?plan=X
  */
